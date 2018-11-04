@@ -1,0 +1,24 @@
+{
+    "name": "scy/fhz",
+    "description": "Library to access the ELV FHZ series of devices",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Tim Weber",
+            "email": "scy@scy.name"
+        }
+    ],
+    "minimum-stability": "stable",
+    "autoload": {
+        "psr-4": {
+            "Scy\\Fhz\\": "src/"
+        }
+    },
+    "require": {
+        "psr/log": "^1.0"
+    },
+    "require-dev": {
+        "monolog/monolog": "^1.23",
+        "guzzlehttp/guzzle": "^6.0"
+    }
+}
