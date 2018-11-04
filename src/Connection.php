@@ -56,7 +56,7 @@ class Connection
     protected function initSerialPort(string $device)
     {
         // TODO: error handling
-        \exec(\sprintf('stty -F %s raw cs8 9600 -parenb -cstopb', \escapeshellarg($device)), $output, $return);
+        \exec(\sprintf('stty -F %s raw cs8 9600 -parenb -cstopb -crtscts -icanon -parmrk -icrnl -echoe -echok -echoctl -echo -isig -opost', \escapeshellarg($device)), $output, $return);
     }
 
     protected function initFHZ()
