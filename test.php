@@ -16,6 +16,10 @@ while (true) {
     if ($in !== false && TemperatureMessage::understands($in)) {
         $msg = new TemperatureMessage($in);
         $logger->info((string)$msg);
-        $guzzle->post($msg->getId(), ['json' => $msg->toArray()]);
+        try {
+            $guzzle->post($msg->getId(), ['json' => $msg->toArray()]);
+        } catch (\Exception $e) {
+            // ignore, just try again next time
+        }
     }
 }
