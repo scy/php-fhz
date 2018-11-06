@@ -46,8 +46,7 @@ class Connection
      * Receive the next incoming message.
      *
      * @param float $timeout How long to wait for a message, in seconds. This is how long this method will block (max).
-     * @return bool|Message false if no message was received, else the raw binary message (excluding 0x81 start byte and
-     *                     length byte).
+     * @return bool|Message false if no message was received, else the parsed message.
      */
     public function read(float $timeout)
     {
@@ -99,9 +98,10 @@ class Connection
      * Internally, this just calls send() and receive() after each other.
      *
      * @param Message $msg The message to send.
-     * @return string The raw response to the command.
+     * @return Message The response to the command.
+     * @throws \InvalidArgumentException if the data received is malformed.
      */
-    protected function query(Message $msg)
+    protected function query(Message $msg): Message
     {
         $this->send($msg);
         return $this->receive();
@@ -136,6 +136,7 @@ class Connection
      * that there's a message waiting or when you're ready to wait for it.
      *
      * @return Message The message that was received.
+     * @throws \InvalidArgumentException if the data received is malformed.
      */
     protected function receive(): Message
     {
@@ -147,14 +148,6 @@ class Connection
 
     /**
      * Send a message to the FHZ.
-     *
-     * A FHZ message looks like this:
-     *
-     * 0x81 (start byte)
-     * length (uint8, including the start byte and this one)
-     * message type (uint8)
-     * message checksum (uint8, see calculateChecksum)
-     * actual payload (byte[])
      *
      * @param Message $msg The message that should be sent.
      */
@@ -174,12 +167,15 @@ class Connection
      * The message payload starts with 0x02 0x01 0x61 and then year, month, day, hours, minutes, each as one byte.
      *
      * @todo Not sure whether these should be provided in BCD form, we use uint8 right now.
-     *
-     * @throws \Exception if we don't know the time, i.e. should not happen.
      */
     protected function setDateTime()
     {
-        $now = new \DateTimeImmutable();
+        try {
+            $now = new \DateTimeImmutable();
+        } catch (\Exception $e) {
+            // Should not happen, but if it does, we simply don't do anything.
+            return;
+        }
         $datestr = $now->format('ymdHi');
         $data = "\x02\x01\x61";
         for ($i = 0; $i < 5; $i++) {

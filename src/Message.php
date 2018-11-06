@@ -7,13 +7,37 @@ class Message
     protected $raw;
     protected $received;
 
+    /**
+     * Create a new (raw) message based on this data.
+     *
+     * A FHZ message looks like this:
+     *
+     * 0x81 (start byte)
+     * length (uint8, including the start byte and this one)
+     * message type (uint8)
+     * message checksum (uint8, see calculateChecksum)
+     * actual payload (byte[])
+     *
+     * @param string $data The binary data of the message.
+     * @throws \InvalidArgumentException if the data is malformed.
+     */
     public function __construct(string $data)
     {
         static::validate($data);
         $this->raw = $data;
-        $this->received = new \DateTimeImmutable();
+        try {
+            $this->received = new \DateTimeImmutable();
+        } catch (\Exception $e) {
+            // Should never happen. Ignore this.
+        }
     }
 
+    /**
+     * Check whether this class would accept the given data when you'd pass it to the constructor.
+     *
+     * @param string $data The binary message data.
+     * @return bool
+     */
     public static function accepts(string $data)
     {
         try {
@@ -44,6 +68,13 @@ class Message
         return \chr($sum);
     }
 
+    /**
+     * Check the data for errors.
+     *
+     * Subclasses can override this method to decide whether they want to accept a certain message (format) or not.
+     *
+     * @param string $data Binary message data.
+     */
     protected static function validate(string $data)
     {
         $length = \strlen($data);
@@ -66,13 +97,16 @@ class Message
     }
 
     /**
-     * @return string The one-byte checksum of this message.
+     * @return string The one-byte checksum of this message in binary form.
      */
     public function getChecksum(): string
     {
         return $this->raw[3];
     }
 
+    /**
+     * @return string The raw message data as space-separated hexadecimal bytes.
+     */
     public function getHexDump(): string
     {
         return \implode(' ', \str_split(\bin2hex($this->getRawBytes()), 2));
@@ -87,18 +121,24 @@ class Message
     }
 
     /**
-     * @return string The raw byte format of this message, from start byte to end of payload.
+     * @return string The raw binary data of this message, from start byte to end of payload.
      */
     public function getRawBytes(): string
     {
         return $this->raw;
     }
 
+    /**
+     * @return \DateTimeImmutable When this message was received (or rather, when the object was created).
+     */
     public function getReceivedTime(): \DateTimeImmutable
     {
         return $this->received;
     }
 
+    /**
+     * @return string A human-readable string representation of the message.
+     */
     public function getSummary(): string
     {
         return 'raw message, contents ' . $this->getHexDump();
@@ -112,6 +152,9 @@ class Message
         return $this->raw[2];
     }
 
+    /**
+     * @return array A key/value representation of this message, suitable for JSON conversion.
+     */
     public function toArray(): array
     {
         return [

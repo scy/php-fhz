@@ -27,8 +27,7 @@ class TemperatureMessage extends Message
      * tTT:   temperature in 1/10 degree Celsius as 3-digit BCD
      * hHH:   humidity in percent as 3-digit BCD? (to be confirmed)
      *
-     * @param string $data
-     * @throws \Exception
+     * @param string $data A raw binary message.
      */
     public function __construct(string $data)
     {
@@ -46,9 +45,7 @@ class TemperatureMessage extends Message
         $this->humidity = (\ord($data[5]) & 0x01) ? null : (float)($values[4] . $values[5] . $values[2]) / 10;
     }
 
-    /**
-     * @param string $data Raw message.
-     */
+    /** @inheritdoc */
     protected static function validate(string $data)
     {
         // We accept types 0 (HMS100 TF) and 1 (HMS100 T).
@@ -73,7 +70,7 @@ class TemperatureMessage extends Message
      * @return string Either "HMS100T" or "HMS100TF" (depending on the sensor type), followed by an underscore and the
      *                4-digit hex ID of the sensor.
      */
-    public function getId()
+    public function getId(): string
     {
         return ($this->humidity === null ? 'HMS100T' : 'HMS100TF') . '_' . $this->address;
     }
@@ -90,7 +87,7 @@ class TemperatureMessage extends Message
     /**
      * @return float Temperature in degrees Celsius.
      */
-    public function getTemperature()
+    public function getTemperature(): float
     {
         return $this->temperature;
     }
@@ -98,7 +95,7 @@ class TemperatureMessage extends Message
     /**
      * @return bool Whether this sensor reports humidity, i.e. whether it's an HMS100TF.
      */
-    public function hasHumidity()
+    public function hasHumidity(): bool
     {
         return $this->humidity !== null;
     }
@@ -106,7 +103,7 @@ class TemperatureMessage extends Message
     /**
      * @return bool Whether this message announces that the sensor has a new battery (and thus its ID changed, I think?)
      */
-    public function hasNewBattery()
+    public function hasNewBattery(): bool
     {
         return (bool)($this->status & 0x40);
     }
@@ -114,7 +111,7 @@ class TemperatureMessage extends Message
     /**
      * @return bool Whether this sensor's battery is low and should be replaced.
      */
-    public function isBatteryLow()
+    public function isBatteryLow(): bool
     {
         return (bool)($this->status & 0x20);
     }
