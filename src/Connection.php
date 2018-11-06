@@ -10,38 +10,68 @@ class Connection
     protected $device;
     protected $logger;
 
+    // Message types. I've named them myself, did not found any documentation about how they are really called.
     const TYPE_META = "\xc9";
     const TYPE_STATUS = "\x04";
 
+    /** @var string This is what FHEM uses to initialize the FHZ. */
     const MSG_INIT2 = "\x02\x01\x1f\x64";
+    /** @var string This is what FHEM uses to receive the FHZ serial number. */
     const MSG_SERIAL = "\xc9\x01\x84\x57\x02\x08";
+    /** @var string This is what FHEM uses to enable HMS reception. */
     const MSG_ENABLE_HMS = "\xc9\x01\x86";
+    /** @var string This is a FS20 command to a dummy actor. FHEM uses it to make sure that the FHZ reports incoming messages. */
     const MSG_RECV_WORKAROUND = "\x01\x01\x01\x00\x01\x00\x00";
 
+    /**
+     * Open a connection to a FHZ device.
+     *
+     * @param string               $device The path to the USB serial device.
+     * @param LoggerInterface|null $logger If you want to provide a PSR-3 logger, you can do it here.
+     */
     public function __construct(string $device, LoggerInterface $logger = null)
     {
         $this->logger = $logger ?: new NullLogger();
         $this->initSerialPort($device);
-        // TODO: error handling
+        // TODO: error handling for the fopen call
         $this->device = \fopen($device, 'r+b');
         $this->initFHZ();
         \stream_set_blocking($this->device, false);
     }
 
+    /**
+     * Receive the next incoming message.
+     *
+     * @param float $timeout How long to wait for a message, in seconds. This is how long this method will block (max).
+     * @return bool|string false if no message was received, else the raw binary message (excluding 0x81 start byte and
+     *                     length byte).
+     */
     public function read(float $timeout)
     {
+        // Prepare stream_select().
         $read = [$this->device];
         $ignore = [];
         $t_sec = (int)$timeout;
         $t_usec = ($timeout - $t_sec) * 1000000;
+
         // TODO: error handling
-        $changed = \stream_select($read, $ignore, $ignore, $t_sec, $t_usec);
-        if (\count($read)) {
+        \stream_select($read, $ignore, $ignore, $t_sec, $t_usec);
+        if (\count($read)) { // there's something waiting
             return $this->receive();
         }
+
         return false;
     }
 
+    /**
+     * Calculate the checksum for a FHZ message.
+     *
+     * The checksum is a simple uint8 sum of all the in the message. We simply add all the bytes and only return the
+     * least significant byte of the sum, which corresponds to doing `sum % 256`.
+     *
+     * @param string $data The payload to send, excluding start (0x81), length and type bytes.
+     * @return string The single checksum byte.
+     */
     protected function calculateChecksum(string $data)
     {
         $sum = 0;
@@ -53,12 +83,24 @@ class Connection
         return \chr($sum);
     }
 
+    /**
+     * Call `stty` to initialize the serial port with the parameters used by the FHZ.
+     *
+     * The settings are based on what FHEM does.
+     *
+     * @param string $device The device path.
+     */
     protected function initSerialPort(string $device)
     {
         // TODO: error handling
         \exec(\sprintf('stty -F %s raw cs8 9600 -parenb -cstopb -crtscts -icanon -parmrk -icrnl -echoe -echok -echoctl -echo -isig -opost', \escapeshellarg($device)), $output, $return);
     }
 
+    /**
+     * Send some commands to set up the FHZ and hopefully put it in a usable state.
+     *
+     * Again, this is somewhat mimicking FHEM's behavior.
+     */
     protected function initFHZ()
     {
         $this->query(static::TYPE_META, static::MSG_INIT2);
@@ -68,12 +110,31 @@ class Connection
         $this->send(static::TYPE_STATUS, static::MSG_RECV_WORKAROUND);
     }
 
+    /**
+     * Send a command, wait for the response and return it.
+     *
+     * Internally, this just calls send() and receive() after each other.
+     *
+     * @param string $type The message type. A single byte, use one of the TYPE_* constants.
+     * @param string $data The message payload. No checks are done, so don't try something wild.
+     * @return string The raw response to the command.
+     */
     protected function query(string $type, string $data)
     {
         $this->send($type, $data);
         return $this->receive();
     }
 
+    /**
+     * Read exactly n bytes from the FHZ.
+     *
+     * This is required since fread() will read _up to_ $count bytes. But if the FHZ is currently sending the response
+     * via USB _while_ we read, fread() won't return all of it. Since FHZ messages have a predetermined length, this is
+     * an easy solution.
+     *
+     * @param int $count The number of bytes to read.
+     * @return string The bytes that were read.
+     */
     protected function readBytes(int $count)
     {
         $str = '';
@@ -86,6 +147,14 @@ class Connection
         return $str;
     }
 
+    /**
+     * Read exactly one message from the FHZ.
+     *
+     * This function will block until a complete message has been read, so make sure you only call it when you're sure
+     * that there's a message waiting or when you're ready to wait for it.
+     *
+     * @return string The body of the message, without the start byte (0x81) and length byte.
+     */
     protected function receive()
     {
         $header = $this->readBytes(2);
@@ -94,6 +163,20 @@ class Connection
         return $body;
     }
 
+    /**
+     * Send a message to the FHZ.
+     *
+     * A FHZ message looks like this:
+     *
+     * 0x81 (start byte)
+     * length (uint8, including the start byte and this one)
+     * message type (uint8)
+     * message checksum (uint8, see calculateChecksum)
+     * actual payload (byte[])
+     *
+     * @param string $type The message type. A single byte, use one of the TYPE_* constants.
+     * @param string $data The message payload. No checks are done, so don't try something wild.
+     */
     protected function send(string $type, string $data)
     {
         if ($type === '') {
@@ -106,6 +189,17 @@ class Connection
         \fwrite($this->device, $toSend);
     }
 
+    /**
+     * Tell the FHZ what the current date and time is.
+     *
+     * I don't think this is required for HMS operation, we do it nevertheless.
+     *
+     * The message payload starts with 0x02 0x01 0x61 and then year, month, day, hours, minutes, each as one byte.
+     *
+     * @todo Not sure whether these should be provided in BCD form, we use uint8 right now.
+     *
+     * @throws \Exception if we don't know the time, i.e. should not happen.
+     */
     protected function setDateTime()
     {
         $now = new \DateTimeImmutable();
