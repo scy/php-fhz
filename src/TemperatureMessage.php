@@ -67,21 +67,29 @@ class TemperatureMessage extends Message
     }
 
     /**
-     * @return string Either "HMS100T" or "HMS100TF" (depending on the sensor type), followed by an underscore and the
-     *                4-digit hex ID of the sensor.
-     */
-    public function getId(): string
-    {
-        return ($this->humidity === null ? 'HMS100T' : 'HMS100TF') . '_' . $this->address;
-    }
-
-    /**
      * @return float Humidity in percent. Note that HMS100T sensors will return null here (they don't measure humidity)
      *               and that HMS100TF sensors are notoriously bad.
      */
     public function getHumidity(): float
     {
         return $this->humidity;
+    }
+
+    /**
+     * @return string The 4-digit hex ID of the sensor.
+     */
+    public function getId(): string
+    {
+        return $this->address;
+    }
+
+    /**
+     * @return string Either "HMS100T" or "HMS100TF" (depending on the sensor type), followed by an underscore and the
+     *                4-digit hex ID of the sensor.
+     */
+    public function getName(): string
+    {
+        return ($this->humidity === null ? 'HMS100T' : 'HMS100TF') . '_' . $this->address;
     }
 
     /**
@@ -124,6 +132,7 @@ class TemperatureMessage extends Message
     {
         return \array_merge(parent::toArray(), [
             'device_id' => $this->getId(),
+            'device_name' => $this->getName(),
             'temperature' => $this->getTemperature(),
             'battery_low' => $this->isBatteryLow(),
         ], $this->hasHumidity() ? ['humidity' => $this->getHumidity()] : []);
@@ -136,7 +145,7 @@ class TemperatureMessage extends Message
     {
         return \sprintf('[%s] %s: %.1f °C%s, battery %s',
             $this->received->format('c'),
-            $this->getId(),
+            $this->getName(),
             $this->temperature,
             $this->hasHumidity() ? \sprintf(', %.1f %%', $this->getHumidity()) : '',
             $this->isBatteryLow() ? 'low' : 'ok'

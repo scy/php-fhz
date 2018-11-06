@@ -32,7 +32,8 @@ class TemperatureMessageTest extends TestCase
     {
         $array = $msg->toArray();
         $this->assertArraySubset([
-            'device_id' => 'HMS100TF_b640',
+            'device_id' => 'b640',
+            'device_name' => 'HMS100TF_b640',
             'temperature' => 11.8,
             'humidity' => 0,
             'battery_low' => false,
