@@ -27,7 +27,7 @@ while (true) {
 
         // Send the reading as a JSON array to dweet.io.
         try {
-            $guzzle->post($msg->getId(), ['json' => $msg->toArray()]);
+            $guzzle->post($msg->getName(), ['json' => $msg->toArray()]);
         } catch (\Exception $e) {
             // ignore, just try again next time
         }
