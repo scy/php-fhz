@@ -8,6 +8,7 @@ use Psr\Log\NullLogger;
 class Connection
 {
     protected $device;
+    protected $parser;
     protected $logger;
 
     // Message types. I've named them myself, did not found any documentation about how they are really called.
@@ -28,10 +29,12 @@ class Connection
      *
      * @param string               $device The path to the USB serial device.
      * @param LoggerInterface|null $logger If you want to provide a PSR-3 logger, you can do it here.
+     * @param Parser|null          $parser The parser class you wish to use. Leave at null for the default parser.
      */
-    public function __construct(string $device, LoggerInterface $logger = null)
+    public function __construct(string $device, LoggerInterface $logger = null, Parser $parser = null)
     {
         $this->logger = $logger ?: new NullLogger();
+        $this->parser = $parser ?: new Parser();
         $this->initSerialPort($device);
         // TODO: error handling for the fopen call
         $this->device = \fopen($device, 'r+b');
@@ -43,8 +46,7 @@ class Connection
      * Receive the next incoming message.
      *
      * @param float $timeout How long to wait for a message, in seconds. This is how long this method will block (max).
-     * @return bool|string false if no message was received, else the raw binary message (excluding 0x81 start byte and
-     *                     length byte).
+     * @return bool|Message false if no message was received, else the parsed message.
      */
     public function read(float $timeout)
     {
@@ -61,26 +63,6 @@ class Connection
         }
 
         return false;
-    }
-
-    /**
-     * Calculate the checksum for a FHZ message.
-     *
-     * The checksum is a simple uint8 sum of all the in the message. We simply add all the bytes and only return the
-     * least significant byte of the sum, which corresponds to doing `sum % 256`.
-     *
-     * @param string $data The payload to send, excluding start (0x81), length and type bytes.
-     * @return string The single checksum byte.
-     */
-    protected function calculateChecksum(string $data)
-    {
-        $sum = 0;
-        for ($i = \strlen($data) - 1; $i >= 0; $i--) {
-            $sum += \ord($data[$i]);
-        }
-
-        // chr() will do the equivalent of '% 256' itself.
-        return \chr($sum);
     }
 
     /**
@@ -103,11 +85,11 @@ class Connection
      */
     protected function initFHZ()
     {
-        $this->query(static::TYPE_META, static::MSG_INIT2);
-        $this->query(static::TYPE_STATUS, static::MSG_SERIAL);
+        $this->query($this->parser->fromTypeAndPayload(static::TYPE_META, static::MSG_INIT2));
+        $this->query($this->parser->fromTypeAndPayload(static::TYPE_STATUS, static::MSG_SERIAL));
         $this->setDateTime();
-        $this->send(static::TYPE_STATUS, static::MSG_ENABLE_HMS);
-        $this->send(static::TYPE_STATUS, static::MSG_RECV_WORKAROUND);
+        $this->send($this->parser->fromTypeAndPayload(static::TYPE_STATUS, static::MSG_ENABLE_HMS));
+        $this->send($this->parser->fromTypeAndPayload(static::TYPE_STATUS, static::MSG_RECV_WORKAROUND));
     }
 
     /**
@@ -115,13 +97,13 @@ class Connection
      *
      * Internally, this just calls send() and receive() after each other.
      *
-     * @param string $type The message type. A single byte, use one of the TYPE_* constants.
-     * @param string $data The message payload. No checks are done, so don't try something wild.
-     * @return string The raw response to the command.
+     * @param Message $msg The message to send.
+     * @return Message The response to the command.
+     * @throws \InvalidArgumentException if the data received is malformed.
      */
-    protected function query(string $type, string $data)
+    protected function query(Message $msg): Message
     {
-        $this->send($type, $data);
+        $this->send($msg);
         return $this->receive();
     }
 
@@ -135,7 +117,7 @@ class Connection
      * @param int $count The number of bytes to read.
      * @return string The bytes that were read.
      */
-    protected function readBytes(int $count)
+    protected function readBytes(int $count): string
     {
         $str = '';
         while ($count > 0) {
@@ -153,37 +135,25 @@ class Connection
      * This function will block until a complete message has been read, so make sure you only call it when you're sure
      * that there's a message waiting or when you're ready to wait for it.
      *
-     * @return string The body of the message, without the start byte (0x81) and length byte.
+     * @return Message The message that was received.
+     * @throws \InvalidArgumentException if the data received is malformed.
      */
-    protected function receive()
+    protected function receive(): Message
     {
-        $header = $this->readBytes(2);
-        $body = $this->readBytes(\ord($header[1]));
-        $this->logger->debug('-> ' . \implode(' ', \str_split(\bin2hex($header . $body), 2)));
-        return $body;
+        $data = $this->readBytes(2);
+        $data .= $this->readBytes(\ord($data[1]));
+        $this->logger->debug('-> ' . \implode(' ', \str_split(\bin2hex($data), 2)));
+        return $this->parser->fromBytes($data);
     }
 
     /**
      * Send a message to the FHZ.
      *
-     * A FHZ message looks like this:
-     *
-     * 0x81 (start byte)
-     * length (uint8, including the start byte and this one)
-     * message type (uint8)
-     * message checksum (uint8, see calculateChecksum)
-     * actual payload (byte[])
-     *
-     * @param string $type The message type. A single byte, use one of the TYPE_* constants.
-     * @param string $data The message payload. No checks are done, so don't try something wild.
+     * @param Message $msg The message that should be sent.
      */
-    protected function send(string $type, string $data)
+    protected function send(Message $msg)
     {
-        if ($type === '') {
-            throw new \InvalidArgumentException('type may not be an empty string');
-        }
-        $type = $type[0]; // only one character allowed
-        $toSend = "\x81" . \chr(\strlen($data) + 2) . $type . $this->calculateChecksum($data) . $data;
+        $toSend = $msg->getRawBytes();
         $this->logger->debug('<- ' . \implode(' ', \str_split(\bin2hex($toSend), 2)));
         // TODO: error handling
         \fwrite($this->device, $toSend);
@@ -197,17 +167,20 @@ class Connection
      * The message payload starts with 0x02 0x01 0x61 and then year, month, day, hours, minutes, each as one byte.
      *
      * @todo Not sure whether these should be provided in BCD form, we use uint8 right now.
-     *
-     * @throws \Exception if we don't know the time, i.e. should not happen.
      */
     protected function setDateTime()
     {
-        $now = new \DateTimeImmutable();
+        try {
+            $now = new \DateTimeImmutable();
+        } catch (\Exception $e) {
+            // Should not happen, but if it does, we simply don't do anything.
+            return;
+        }
         $datestr = $now->format('ymdHi');
         $data = "\x02\x01\x61";
         for ($i = 0; $i < 5; $i++) {
             $data .= \chr(\substr($datestr, 2 * $i, 2));
         }
-        $this->send(static::TYPE_STATUS, $data);
+        $this->send($this->parser->fromTypeAndPayload(static::TYPE_STATUS, $data));
     }
 }

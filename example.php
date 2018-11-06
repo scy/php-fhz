@@ -19,17 +19,15 @@ $guzzle = new \GuzzleHttp\Client([
 ]);
 
 while (true) {
-    // Try to read a message. This either returns false or a raw string that we can pass to a message class constructor.
-    $in = $c->read(0.5);
+    // Try to read a message. This either returns false or a message object.
+    $msg = $c->read(0.5);
 
-    if ($in !== false && TemperatureMessage::understands($in)) { // we have a temperature reading
-        // Parse the message and log a string representation of it.
-        $msg = new TemperatureMessage($in);
-        $logger->info((string)$msg);
+    if ($msg instanceof TemperatureMessage) { // we have a temperature reading
+        $logger->info($msg->getSummary());
 
         // Send the reading as a JSON array to dweet.io.
         try {
-            $guzzle->post($msg->getId(), ['json' => $msg->toArray()]);
+            $guzzle->post($msg->getName(), ['json' => $msg->toArray()]);
         } catch (\Exception $e) {
             // ignore, just try again next time
         }
