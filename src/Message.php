@@ -115,7 +115,7 @@ class Message
     public function toArray(): array
     {
         return [
-            'received' => $this->getReceivedTime(),
+            'received' => $this->getReceivedTime()->format('c'),
             'dump' => $this->getHexDump(),
         ];
     }
