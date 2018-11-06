@@ -2,6 +2,7 @@
     "name": "scy/fhz",
     "description": "Library to access the ELV FHZ series of devices",
     "type": "library",
+    "license": "MIT",
     "authors": [
         {
             "name": "Tim Weber",
