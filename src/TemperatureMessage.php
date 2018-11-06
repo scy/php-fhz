@@ -17,9 +17,19 @@ class TemperatureMessage
     {
         $this->address = \bin2hex(\substr($data, 6, 2));
         $this->status = \ord($data[10]);
+
+        // Temperature and humidity values specified as their hex value taken as a string, i.e. 0x123 means 123.
+        // Hex digits between a and f are invalid. The temperature drops directly from 0x100 to 0x099.
         $values = \bin2hex(\substr($data, 11, 3));
-        $this->temperature = \hexdec($values[3] . $values[0] . $values[1]) * 0.04 * (($this->status & 0x80) ? -1 : 1);
-        $this->humidity = (\ord($data[3]) & 0x01) ? null : \hexdec($values[4] . $values[5] . $values[2]) * 100 / 4096;
+        if (!\ctype_digit($temp_hex = $values[3] . $values[0] . $values[1])) {
+            throw new \InvalidArgumentException('temperature hex value is not in base 10');
+        }
+        $this->temperature = (float)$temp_hex / 10 * (($this->status & 0x80) ? -1 : 1);
+        if (!\ctype_digit($hum_hex = $values[4] . $values[5] . $values[2])) {
+            throw new \InvalidArgumentException('humidity hex value is not in base 10');
+        }
+        $this->humidity = (\ord($data[3]) & 0x01) ? null : (float)$hum_hex / 10;
+
         $this->created = new \DateTimeImmutable();
     }
 
