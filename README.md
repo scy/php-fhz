@@ -24,14 +24,10 @@ If no messages arrived after `$seconds` (a float), the method will return `false
 Messages that arrive while your `read()` is not running will be buffered by your operating system's IO buffer and returned one by one when you call `read()` the next time.
 (That buffer is limited, so don't get too crazy.)
 
-The message is returned as a binary string and you have to construct a message object to parse it.
-This is subject to change:
-In a future version, `read()` is supposed to return the message object directly.
+The message is returned as a a `Message` object or a subclass of it.
 
-Currently, only one message type is implemented: `TemperatureMessage`.
+Currently, only one subclass is implemented: `TemperatureMessage`.
 It represents a single reading of a HMS100T (temperature) or HMS100TF (temperature/humidity) sensor.
-You can use `TemperatureMessage::understands($msg)` to check whether it can handle the message.
-If it does, call `new TemperatureMessage($msg)` to create an object from that message string.
 Use methods like `getTemperature()` to access the data.
 
 You can also [have a look at some example code](example.php), which probably explains it better.

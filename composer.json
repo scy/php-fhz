@@ -21,6 +21,7 @@
     },
     "require-dev": {
         "monolog/monolog": "^1.23",
-        "guzzlehttp/guzzle": "^6.0"
+        "guzzlehttp/guzzle": "^6.0",
+        "phpunit/phpunit": "^6"
     }
 }
