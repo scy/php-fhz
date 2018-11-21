@@ -39,4 +39,15 @@ class TemperatureMessageTest extends TestCase
             'battery_low' => false,
         ], $array);
     }
+
+    /**
+     * Make sure that the ID is a string even when its hex digits are [0-9] only.
+     */
+    public function testIdIsString()
+    {
+        $bytes = "\x81\x0e\x04\xc5\x05\x10\xa0\x01\x36\x40\x00\x00\x00\x18\x01\x00";
+        /** @var TemperatureMessage $msg */
+        $msg = (new Parser())->fromBytes($bytes);
+        $this->assertSame('3640', $msg->getId());
+    }
 }
