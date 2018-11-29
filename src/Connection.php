@@ -30,14 +30,16 @@ class Connection
      * @param string               $device The path to the USB serial device.
      * @param LoggerInterface|null $logger If you want to provide a PSR-3 logger, you can do it here.
      * @param Parser|null          $parser The parser class you wish to use. Leave at null for the default parser.
+     * @throws ConnectionException
      */
     public function __construct(string $device, LoggerInterface $logger = null, Parser $parser = null)
     {
         $this->logger = $logger ?: new NullLogger();
         $this->parser = $parser ?: new Parser();
         $this->initSerialPort($device);
-        // TODO: error handling for the fopen call
-        $this->device = \fopen($device, 'r+b');
+        if (!($this->device = \fopen($device, 'r+b'))) {
+            throw new ConnectionException("could not open $device for reading");
+        }
         $this->initFHZ();
         \stream_set_blocking($this->device, false);
     }
@@ -47,9 +49,14 @@ class Connection
      *
      * @param float $timeout How long to wait for a message, in seconds. This is how long this method will block (max).
      * @return bool|Message false if no message was received, else the parsed message.
+     * @throws ConnectionException
      */
     public function read(float $timeout)
     {
+        if (\feof($this->device)) {
+            throw new ConnectionException('EOF on FHZ handle');
+        }
+
         // Prepare stream_select().
         $read = [$this->device];
         $ignore = [];
@@ -116,12 +123,16 @@ class Connection
      *
      * @param int $count The number of bytes to read.
      * @return string The bytes that were read.
+     * @throws ConnectionException
      */
     protected function readBytes(int $count): string
     {
         $str = '';
         while ($count > 0) {
             $chunk = \fread($this->device, $count);
+            if ($chunk === false) {
+                throw new ConnectionException('reading from the FHZ failed');
+            }
             $str .= $chunk;
             // TODO: error handling
             $count -= \strlen($chunk);
@@ -150,13 +161,20 @@ class Connection
      * Send a message to the FHZ.
      *
      * @param Message $msg The message that should be sent.
+     * @throws ConnectionException
      */
     protected function send(Message $msg)
     {
         $toSend = $msg->getRawBytes();
         $this->logger->debug('<- ' . \implode(' ', \str_split(\bin2hex($toSend), 2)));
         // TODO: error handling
-        \fwrite($this->device, $toSend);
+        $result = \fwrite($this->device, $toSend);
+        if ($result === false) {
+            throw new ConnectionException('writing to FHZ failed');
+        }
+        if ($result !== ($size = \strlen($toSend))) {
+            throw new ConnectionException("expected $size bytes to be written, not $result");
+        }
     }
 
     /**
